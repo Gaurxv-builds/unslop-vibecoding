@@ -39,7 +39,19 @@ if (!play) {
 const file = resolve(input);
 const root = dirname(file);
 const html = readFileSync(file, "utf8");
-const meta = (name) => new RegExp(`<meta\\s+name="${name}"\\s+content="([^"]*)"`, "i").exec(html)?.[1];
+// A meta tag is valid HTML whatever order its attributes are in and
+// whichever quotes they use, so read the tag first, then its attributes.
+const meta = (name) => {
+  for (const [, attrs] of html.matchAll(/<meta\s+([^>]*)>/gi)) {
+    const get = (attr) =>
+      new RegExp(`(?:^|\\s)${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i")
+        .exec(attrs)
+        ?.slice(1)
+        .find((value) => value !== undefined);
+    if (get("name")?.toLowerCase() === name) return get("content");
+  }
+  return undefined;
+};
 const steps = (meta("unslop-steps") ?? "")
   .split(",")
   .map((step) => step.trim())
@@ -48,7 +60,13 @@ if (steps.length === 0) {
   console.error('story.html needs <meta name="unslop-steps" content="Spacing, Color, Type"> listing the steps in order');
   process.exit(1);
 }
-const [frameX = 0, frameY = 0, frameWidth = 960] = (meta("unslop-frame") ?? "0 0 960").split(/\s+/).map(Number);
+const frameRaw = meta("unslop-frame") ?? "0 0 960";
+const frame = frameRaw.split(/\s+/).filter(Boolean);
+const [frameX, frameY, frameWidth] = frame.map(Number);
+if (frame.length !== 3 || frame.some((value) => !Number.isFinite(Number(value))) || frameWidth <= 0) {
+  console.error(`unslop-frame must be three numbers, like "0 0 960", with a width above 0 — got "${frameRaw}"`);
+  process.exit(1);
+}
 const kindOf = (text) => (/spac/i.test(text) ? "spacing" : /detail|radius|corner/i.test(text) ? "details" : null);
 
 const FRAME = wide ? { width: 1920, height: 1080 } : { width: 1080, height: 1080 };
